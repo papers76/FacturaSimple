@@ -1,5 +1,7 @@
 {
-  "name": "Obsidian Analytics",
-  "description": "A high-performance, dark-mode dashboard for real-time analytics, featuring AI-driven insights powered by Gemini.",
-  "requestFramePermissions": []
+  "name": "Obsidian Invoice AI",
+  "description": "Intelligent invoice processing system with Calipso export capabilities.",
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

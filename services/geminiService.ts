@@ -1,37 +1,63 @@
 import { GoogleGenAI } from "@google/genai";
-import { DashboardData } from "../types";
+import { Invoice } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-export const generateExecutiveSummary = async (data: DashboardData): Promise<string> => {
+export const analyzeInvoiceImage = async (base64Image: string): Promise<Partial<Invoice>> => {
   try {
     const model = 'gemini-2.5-flash';
     
-    // Prepare a concise context string from the data
-    const metricsSummary = data.metrics.map(m => `${m.label}: ${m.value} (${m.change > 0 ? '+' : ''}${m.change}%)`).join(', ');
-    const latestTransactions = data.transactions.slice(0, 3).map(t => `${t.user} paid ${t.amount} (${t.status})`).join(', ');
-    
+    // Clean base64 string if it has the data prefix
+    const cleanBase64 = base64Image.split(',')[1] || base64Image;
+
     const prompt = `
-      You are an AI business analyst for a SaaS dashboard.
-      Analyze the following current data snapshot:
-      
-      Key Metrics: ${metricsSummary}
-      Recent Activity Sample: ${latestTransactions}
-      
-      Provide a concise, professional executive summary (max 3 sentences) highlighting performance, potential risks, or actionable insights. 
-      Do not use markdown formatting like bolding or headers, just plain text suitable for a notification card.
-      Tone: Professional, Insightful, Direct.
+      Analyze this image of an invoice. Extract the following details into a JSON object:
+      - invoiceNumber (string)
+      - supplierName (string)
+      - date (string, YYYY-MM-DD format)
+      - subtotal (number, the net amount before tax)
+      - taxAmount (number, the VAT/IVA amount)
+      - total (number, the final total)
+      - items (array of objects with description, quantity, unitPrice, total)
+
+      If you cannot find specific line items, try to estimate them or provide a single item with the description "Various Services".
+      Ensure numbers are raw numbers (no currency symbols).
+      Return ONLY valid JSON.
     `;
 
     const response = await ai.models.generateContent({
       model,
-      contents: prompt,
+      contents: {
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: cleanBase64 } },
+          { text: prompt }
+        ]
+      },
+      config: {
+        responseMimeType: 'application/json'
+      }
     });
 
-    return response.text || "Unable to generate summary at this time.";
+    const text = response.text;
+    if (!text) throw new Error("No response from AI");
+
+    // Parse JSON
+    const data = JSON.parse(text);
+
+    return {
+      invoiceNumber: data.invoiceNumber || 'Unknown',
+      supplierName: data.supplierName || 'Unknown Supplier',
+      date: data.date || new Date().toISOString().split('T')[0],
+      subtotal: data.subtotal || 0,
+      taxAmount: data.taxAmount || 0,
+      total: data.total || 0,
+      items: data.items || [],
+      status: 'Draft'
+    };
+
   } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw new Error("Failed to fetch insights.");
+    console.error("Gemini Vision API Error:", error);
+    throw new Error("Failed to analyze invoice.");
   }
 };
